@@ -30,13 +30,17 @@ if not API_Key:
     st.info('Please Enter API Key in the sidebar')
     st.stop()
 
-os.environ['Gemini_API_Key']=API_Key
-
+os.environ['GOOGLE_API_KEY'] = API_Key
 # File Upload + indexing
 
 file_upload=st.file_uploader('Upload a file',type=['pdf'])
 
-def build_vectorstore(pdf_bytes:bytes,size:int,overlap:int)->FAISS:
+def build_vectorstore(
+    pdf_bytes: bytes,
+    size: int,
+    overlap: int,
+    api_key: str
+) -> FAISS:
     """Load PDF,split into chunk,embed,and store in Faiss"""
     with tempfile.NamedTemporaryFile(delete=False,suffix='.pdf') as tmp:
         tmp.write(pdf_bytes)
@@ -52,7 +56,10 @@ def build_vectorstore(pdf_bytes:bytes,size:int,overlap:int)->FAISS:
         separators=['\n\n','\n','.',' ','']
     )
     chunks=splitter.split_documents(docs)
-    embeddings=GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/gemini-embedding-001",
+        google_api_key=api_key,   # function ka parameter
+    )
     return FAISS.from_documents(chunks,embeddings)
 
 if file_upload is not None:
@@ -62,9 +69,13 @@ if file_upload is not None:
     chunk_overlap)
     if st.session_state.get("file_sig") != file_sig:
         with st.spinner('Reading and Indexing PDF'):
-            st.session_state.vectorstore= build_vectorstore(
-                file_upload.getvalue(),chunk_size,chunk_overlap
-            )
+            st.session_state.vectorstore = build_vectorstore(
+    file_upload.getvalue(),
+    chunk_size,
+    chunk_overlap,
+    API_Key
+)
+            
             st.session_state.file_sig=file_sig
             st.session_state.messages=[]
         st.success(f"Indexed **{file_upload}** and ask away")
@@ -94,7 +105,7 @@ def format_docs(docs) -> str:
 
 def get_chain(vectorstore:FAISS,model:str,k:int):
     retriever=vectorstore.as_retriever(search_kwargs={"k":k})
-    llm=ChatGoogleGenerativeAI(model=model,temperature=0)
+    llm = ChatGoogleGenerativeAI(model=model,temperature=0,google_api_key=API_Key)
     return(
         {"context":retriever|format_docs,"question":RunnablePassthrough()}
         |RAG_Prompt
